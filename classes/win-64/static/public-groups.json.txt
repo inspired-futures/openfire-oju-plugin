@@ -1,0 +1,5 @@
+[
+    {"name":"lecture","description":"Lecture theatre","clientCount":0},
+    {"name":"lobby","description":"A place for wait for each other","clientCount":0},
+    {"name":"public","description":"A place for everyone to hangout","clientCount":0}
+]
