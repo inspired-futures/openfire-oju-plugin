@@ -15,9 +15,12 @@ import org.jivesoftware.openfire.container.PluginManager;
 import org.jivesoftware.openfire.net.SASLAuthentication;
 import org.jivesoftware.openfire.http.HttpBindManager;
 import org.jivesoftware.openfire.XMPPServer;
+import org.jivesoftware.openfire.sasl.AnonymousSaslServer;
 import org.jivesoftware.openfire.muc.*;
 import org.jivesoftware.openfire.sasl.AnonymousSaslServer;
 import org.jivesoftware.openfire.user.UserManager;
+import org.jivesoftware.util.cache.Cache;
+import org.jivesoftware.util.cache.CacheFactory;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -68,6 +71,7 @@ public class Oju implements Plugin, PropertyEventListener, ProcessListener, MUCE
     private ServletContextHandler ojuContext;
     private WebAppContext jspService;
     private ServletContextHandler ojuWsContext = null;
+    private Cache muc_properties;	
 
     public static Oju self;
 
@@ -97,6 +101,8 @@ public class Oju implements Plugin, PropertyEventListener, ProcessListener, MUCE
 
     public void initializePlugin(final PluginManager manager, final File pluginDirectory)
     {
+		muc_properties = CacheFactory.createLocalCache("MUC Room Properties");	
+		
         PropertyEventDispatcher.addListener(this);
         MUCEventDispatcher.addListener(this);
 
@@ -174,8 +180,13 @@ public class Oju implements Plugin, PropertyEventListener, ProcessListener, MUCE
         jspService.setClassLoader(this.getClass().getClassLoader());
         jspService.getMimeTypes().addMimeMapping("wasm", "application/wasm");
 
-        SecurityHandler securityHandler = basicAuth("oju");
-        jspService.setSecurityHandler(securityHandler);
+		boolean anonLogin = AnonymousSaslServer.ENABLED.getValue();
+
+		if (!anonLogin)
+		{
+			SecurityHandler securityHandler = basicAuth("oju");
+			jspService.setSecurityHandler(securityHandler);
+		}
 
         final List<ContainerInitializer> initializers = new ArrayList<>();
         initializers.add(new ContainerInitializer(new JettyJasperInitializer(), null));
@@ -192,11 +203,18 @@ public class Oju implements Plugin, PropertyEventListener, ProcessListener, MUCE
 
         ojuWsContext = new ServletContextHandler(null, "/galene-ws", ServletContextHandler.SESSIONS);
 
-        try {
+        try {					
+            boolean anonLogin = AnonymousSaslServer.ENABLED.getValue();
+
+            if (!anonLogin)
+            {
+                SecurityHandler securityHandler = basicAuth("oju");
+                ojuWsContext.setSecurityHandler(securityHandler);
+            }			
             WebSocketUpgradeFilter wsfilter = WebSocketUpgradeFilter.configureContext(ojuWsContext);
             wsfilter.getFactory().getPolicy().setIdleTimeout(60 * 60 * 1000);
             wsfilter.getFactory().getPolicy().setMaxTextMessageSize(64000000);
-            wsfilter.addMapping(new ServletPathSpec("/*"), new OjuSocketCreator());
+            wsfilter.addMapping(new ServletPathSpec("/*"), new OjuSocketCreator());			
 
         } catch (Exception e) {
             Log.error("loadWebSocket", e);
@@ -295,6 +313,12 @@ public class Oju implements Plugin, PropertyEventListener, ProcessListener, MUCE
             {
                 ojuHomePath = ojuHomePath + File.separator + "win-64";
                 ojuExePath = ojuHomePath + File.separator + "galene.exe";
+                makeFileExecutable(ojuExePath);				
+            }
+            else if(OSUtils.IS_WINDOWS32)
+            {
+                ojuHomePath = ojuHomePath + File.separator + "win-32";
+                ojuExePath = ojuHomePath + File.separator + "galene.exe";
                 makeFileExecutable(ojuExePath);
 
             } else {
@@ -357,7 +381,13 @@ public class Oju implements Plugin, PropertyEventListener, ProcessListener, MUCE
 
         String roomName = room.getJID().getNode();
         String password = room.getPassword();
-        Map<String, String> properties = new MUCRoomProperties(room.getID());
+		Map<String, String> properties = (Map<String, String>) muc_properties.get(room.getJID().toString());
+		
+		if (properties == null)
+		{
+			properties = new MUCRoomProperties(room.getID());
+			muc_properties.put(room.getJID().toString(), properties);
+		}		
 
         if (!properties.containsKey("oju.owner.password")) properties.put("oju.owner.password", StringUtils.randomString(40));
         if (!properties.containsKey("oju.admin.password")) properties.put("oju.admin.password", StringUtils.randomString(40));

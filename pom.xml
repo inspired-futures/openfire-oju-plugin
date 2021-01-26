@@ -27,6 +27,23 @@
                 <version>2.7</version>
                 <executions>
                 <execution>
+                    <id>copy-win-32</id>
+                    <phase>prepare-package</phase>
+                    <goals>
+                    <goal>copy-resources</goal>
+                    </goals>
+
+                    <configuration>
+                    <overwrite>true</overwrite>                 
+                    <outputDirectory>classes/win-32</outputDirectory>
+                    <resources>
+                        <resource>
+                        <directory>src/root</directory>
+                        </resource>
+                    </resources>
+                    </configuration>
+                </execution>
+                <execution>
                     <id>copy-win-64</id>
                     <phase>prepare-package</phase>
                     <goals>
@@ -42,7 +59,7 @@
                         </resource>
                     </resources>
                     </configuration>
-                </execution>
+                </execution>				
                 <execution>
                     <id>copy-linux-64</id>
                     <phase>prepare-package</phase>
