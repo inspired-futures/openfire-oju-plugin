@@ -74,6 +74,7 @@ public class Oju implements Plugin, PropertyEventListener, ProcessListener, MUCE
     private Cache muc_properties;	
 
     public static Oju self;
+    public static final ConcurrentHashMap<String, ProxyWebSocket> websockets = new ConcurrentHashMap<>();	
 
     public void destroyPlugin()
     {
@@ -549,7 +550,31 @@ public class Oju implements Plugin, PropertyEventListener, ProcessListener, MUCE
 
     public void messageReceived(JID roomJID, JID user, String nickname, Message message)
     {
-
+		// {"type":"chat","source":"0226ce2742c8fdfb5729ee0af67b7d55","username":"femi","value":"aaaaaaaaaaaaaaaaaaaa","time":1613648989119}		
+		String username = user.getNode();
+		String room_name = roomJID.getNode();
+		
+		Log.debug("websockets room " + room_name + ", user " + username);
+		
+		for (String key : websockets.keySet())
+		{
+			if (key.startsWith(room_name))
+			{
+				ProxyWebSocket socket = websockets.get(key);
+				
+				if (!socket.participants.containsKey(username))	// xmpp participant
+				{
+					JSONObject json = new JSONObject();
+					json.put("type", "chat");
+					json.put("username", username);			
+					json.put("source", "");			
+					json.put("value", message.getBody());
+					json.put("time", System.currentTimeMillis());			
+					
+					socket.deliver(json.toString());
+				}
+			}
+		}
     }
 
     public void roomSubjectChanged(JID roomJID, JID user, String newSubject)
