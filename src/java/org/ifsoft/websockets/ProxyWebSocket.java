@@ -121,7 +121,7 @@ import org.ifsoft.oju.openfire.Oju;
 					Log.debug("storing socket for " + room_name + username);
 					Oju.self.websockets.put(room_name + username, this);
 					xmpp = new XmppConnection(this, username);	
-					xmpp.route("<presence />");					
+					xmpp.route("<presence from=\"" + xmpp.getJid() + "\" />");					
 				}
 			}
 			else
@@ -168,7 +168,8 @@ import org.ifsoft.oju.openfire.Oju;
 						{
 							message.setType(Message.Type.groupchat);							
 							message.setFrom(room_name + "@" + service + "." + domain + "/" + username);
-							room.send(message, room.getRole());	
+							room.send(message, room.getRole());								
+							mucService.logConversation(room, message, xmpp.getJid());
 						}							
 					} else {
 						if (participants.containsKey(dest))

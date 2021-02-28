@@ -13,8 +13,7 @@ import org.jivesoftware.openfire.spi.ConnectionConfiguration;
 import org.jivesoftware.openfire.spi.ConnectionManagerImpl;
 import org.jivesoftware.openfire.spi.ConnectionType;
 import org.jivesoftware.openfire.auth.AuthToken;
-import org.xmpp.packet.Packet;
-import org.xmpp.packet.StreamError;
+import org.xmpp.packet.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.dom4j.*;
@@ -49,6 +48,11 @@ public class XmppConnection extends VirtualConnection
 		} catch (Exception e) {
 			Log.error("xmpp routing failed", e);
 		}			
+	}
+	
+	public JID getJid()
+	{
+		return session.getAddress();
 	}
 	
     @Override
