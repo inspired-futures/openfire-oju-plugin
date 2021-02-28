@@ -40,10 +40,12 @@ import org.ifsoft.oju.openfire.Oju;
     private static Logger Log = LoggerFactory.getLogger( "ProxyWebSocket" );
     private Session wsSession;
     private ProxyConnection proxyConnection;
+	private XmppConnection xmpp = null;
 	private String room_name = null;
-	private String username = "";
 	private String domain = XMPPServer.getInstance().getServerInfo().getXMPPDomain();
 	private MessageRouter messageRouter = XMPPServer.getInstance().getMessageRouter();
+	
+	public String username = "";	
 	public HashMap<String, String> participants = new HashMap<String, String>();
 
     public void setProxyConnection(ProxyConnection proxyConnection) {
@@ -117,7 +119,9 @@ import org.ifsoft.oju.openfire.Oju;
 				if (!username.isEmpty())
 				{
 					Log.debug("storing socket for " + room_name + username);
-					Oju.self.websockets.put(room_name + username, this);		
+					Oju.self.websockets.put(room_name + username, this);
+					xmpp = new XmppConnection(this, username);	
+					xmpp.route("<presence />");					
 				}
 			}
 			else
@@ -222,6 +226,8 @@ import org.ifsoft.oju.openfire.Oju;
 		if (!username.isEmpty())
 		{
 			Oju.self.websockets.remove(room_name + username);		
-		}		
+		}
+
+		if (xmpp != null) xmpp.close();		
     }
 }
