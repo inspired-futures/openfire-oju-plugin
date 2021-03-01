@@ -322,7 +322,7 @@ function gotClose(code, reason) {
 function gotDownStream(c) {
     c.onclose = function(replace) {
         if(!replace)
-            delMedia(c.id);
+            delMedia(c.localId);
     };
     c.onerror = function(e) {
         console.error(e);
@@ -331,6 +331,15 @@ function gotDownStream(c) {
     c.ondowntrack = function(track, transceiver, label, stream) {
         setMedia(c, false);
     };
+    c.onnegotiationcompleted = function() {
+        let found = false;
+        for(let key in c.labels) {
+            if(c.labels[key] === 'video')
+                found = true;
+        }
+        if(!found)
+            resetMedia(c);
+    }
     c.onstatus = function(status) {
         setMediaStatus(c);
     };
@@ -379,10 +388,9 @@ getButtonElement('unpresentbutton').onclick = function(e) {
 };
 
 function changePresentation() {
-    let id = findUpMedia('local');
-    if(id) {
-        addLocalMedia(id);
-    }
+    let c = findUpMedia('local');
+    if(c)
+        addLocalMedia(c.localId);
 }
 
 /**
@@ -398,21 +406,26 @@ function setVisibility(id, visible) {
 }
 
 function setButtonsVisibility() {
+    let connected = serverConnection && serverConnection.socket;
     let permissions = serverConnection.permissions;
     let local = !!findUpMedia('local');
     let share = !!findUpMedia('screenshare');
     let video = !!findUpMedia('video');
-    /** @ts-ignore */
-    let canFile = !!HTMLVideoElement.prototype.captureStream;
+    let canWebrtc = !(typeof RTCPeerConnection === 'undefined');
+    let canFile =
+        /** @ts-ignore */
+        !!HTMLVideoElement.prototype.captureStream ||
+        /** @ts-ignore */
+        !!HTMLVideoElement.prototype.mozCaptureStream;
 
     // don't allow multiple presentations
-    setVisibility('presentbutton', permissions.present && !local);
+    setVisibility('presentbutton', canWebrtc && permissions.present && !local);
     setVisibility('unpresentbutton', local);
 
-    setVisibility('mutebutton', permissions.present);
+    setVisibility('mutebutton', !connected || permissions.present);
 
     // allow multiple shared documents
-    setVisibility('sharebutton', permissions.present &&
+    setVisibility('sharebutton', canWebrtc && permissions.present &&
                   ('getDisplayMedia' in navigator.mediaDevices));
     setVisibility('unsharebutton', share);
 
@@ -598,7 +611,7 @@ function gotUpStats(stats) {
  * @param {boolean} value
  */
 function setActive(c, value) {
-    let peer = document.getElementById('peer-' + c.id);
+    let peer = document.getElementById('peer-' + c.localId);
     if(value)
         peer.classList.add('peer-active');
     else
@@ -747,10 +760,10 @@ async function setMediaChoices(done) {
 
 
 /**
- * @param {string} [id]
+ * @param {string} [localId]
  */
-function newUpStream(id) {
-    let c = serverConnection.newUpStream(id);
+function newUpStream(localId) {
+    let c = serverConnection.newUpStream(localId);
     c.onstatus = function(status) {
         setMediaStatus(c);
     };
@@ -986,9 +999,9 @@ function isSafari() {
 }
 
 /**
- * @param {string} [id]
+ * @param {string} [localId]
  */
-async function addLocalMedia(id) {
+async function addLocalMedia(localId) {
     let settings = getSettings();
 
     let audio = settings.audio ? {deviceId: settings.audio} : false;
@@ -1013,13 +1026,7 @@ async function addLocalMedia(id) {
         }
     }
 
-    let old = id && serverConnection.up[id];
-    if(!audio && !video) {
-        if(old)
-            old.close();
-        return;
-    }
-
+    let old = serverConnection.findByLocalId(localId);
     if(old && old.onclose) {
         // make sure that the camera is released before we try to reopen it
         old.onclose.call(old, true);
@@ -1037,7 +1044,15 @@ async function addLocalMedia(id) {
 
     setMediaChoices(true);
 
-    let c = newUpStream(id);
+    let c;
+
+    try {
+        c = newUpStream(localId);
+    } catch(e) {
+        console.log(e);
+        displayError(e);
+        return;
+    }
 
     c.kind = 'local';
     c.stream = stream;
@@ -1050,21 +1065,21 @@ async function addLocalMedia(id) {
                 stopStream(stream);
                 setFilter(c, null);
                 if(!replace)
-                    delMedia(c.id);
+                    delMedia(c.localId);
             }
         } catch(e) {
             displayWarning(e);
             c.onclose = replace => {
                 stopStream(c.stream);
                 if(!replace)
-                    delMedia(c.id);
+                    delMedia(c.localId);
             }
         }
     } else {
         c.onclose = replace => {
             stopStream(c.stream);
             if(!replace)
-                delMedia(c.id);
+                delMedia(c.localId);
         }
     }
 
@@ -1118,7 +1133,7 @@ async function addShareMedia() {
     c.onclose = replace => {
         stopStream(stream);
         if(!replace)
-            delMedia(c.id);
+            delMedia(c.localId);
     }
     stream.getTracks().forEach(t => {
         c.pc.addTrack(t, stream);
@@ -1135,18 +1150,23 @@ async function addShareMedia() {
  * @param {File} file
  */
 async function addFileMedia(file) {
-    /** @ts-ignore */
-    if(!HTMLVideoElement.prototype.captureStream) {
-        displayError("This browser doesn't support file playback");
-        return;
-    }
-
     let url = URL.createObjectURL(file);
     let video = document.createElement('video');
     video.src = url;
     video.controls = true;
+    let stream;
     /** @ts-ignore */
-    let stream = video.captureStream();
+    if(video.captureStream)
+        /** @ts-ignore */
+        stream = video.captureStream();
+    /** @ts-ignore */
+    else if(video.mozCaptureStream)
+        /** @ts-ignore */
+        stream = video.mozCaptureStream();
+    else {
+        displayError("This browser doesn't support file playback");
+        return;
+    }
 
     let c = newUpStream();
     c.kind = 'video';
@@ -1154,13 +1174,13 @@ async function addFileMedia(file) {
     c.onclose = function(replace) {
         stopStream(c.stream);
         let media = /** @type{HTMLVideoElement} */
-            (document.getElementById('media-' + this.id));
+            (document.getElementById('media-' + this.localId));
         if(media && media.src) {
             URL.revokeObjectURL(media.src);
             media.src = null;
         }
         if(!replace)
-            delMedia(c.id);
+            delMedia(c.localId);
     };
 
     stream.onaddtrack = function(e) {
@@ -1235,11 +1255,13 @@ function closeUpMediaKind(kind) {
 
 /**
  * @param {string} kind
+ * @returns {Stream}
  */
 function findUpMedia(kind) {
     for(let id in serverConnection.up) {
-        if(serverConnection.up[id].kind === kind)
-            return id;
+        let c = serverConnection.up[id]
+        if(c.kind === kind)
+            return c;
     }
     return null;
 }
@@ -1278,16 +1300,16 @@ function muteLocalTracks(mute) {
 async function setMedia(c, isUp, mirror, video) {
     let peersdiv = document.getElementById('peers');
 
-    let div = document.getElementById('peer-' + c.id);
+    let div = document.getElementById('peer-' + c.localId);
     if(!div) {
         div = document.createElement('div');
-        div.id = 'peer-' + c.id;
+        div.id = 'peer-' + c.localId;
         div.classList.add('peer');
         peersdiv.appendChild(div);
     }
 
     let media = /** @type {HTMLVideoElement} */
-        (document.getElementById('media-' + c.id));
+        (document.getElementById('media-' + c.localId));
     if(media) {
         if(video) {
             throw new Error("Duplicate video");
@@ -1305,21 +1327,24 @@ async function setMedia(c, isUp, mirror, video) {
         media.autoplay = true;
         /** @ts-ignore */
         media.playsinline = true;
-        media.id = 'media-' + c.id;
+        media.id = 'media-' + c.localId;
         div.appendChild(media);
         if(!video)
             addCustomControls(media, div, c);
-        if(mirror)
-            media.classList.add('mirror');
     }
+
+    if(mirror)
+        media.classList.add('mirror');
+    else
+        media.classList.remove('mirror');
 
     if(!video && media.srcObject !== c.stream)
         media.srcObject = c.stream;
 
-    let label = document.getElementById('label-' + c.id);
+    let label = document.getElementById('label-' + c.localId);
     if(!label) {
         label = document.createElement('div');
-        label.id = 'label-' + c.id;
+        label.id = 'label-' + c.localId;
         label.classList.add('label');
         div.appendChild(label);
     }
@@ -1341,6 +1366,22 @@ async function setMedia(c, isUp, mirror, video) {
 }
 
 /**
+ * resetMedia resets the source stream of the media element associated
+ * with c.  This has the side-effect of resetting any frozen frames.
+ *
+ * @param {Stream} c
+ */
+function resetMedia(c) {
+    let media = /** @type {HTMLVideoElement} */
+        (document.getElementById('media-' + c.localId));
+    if(!media) {
+        console.error("Resetting unknown media element")
+        return;
+    }
+    media.srcObject = media.srcObject;
+}
+
+/**
  * @param {Element} elt
  */
 function cloneHTMLElement(elt) {
@@ -1356,7 +1397,7 @@ function cloneHTMLElement(elt) {
  */
 function addCustomControls(media, container, c) {
     media.controls = false;
-    let controls = document.getElementById('controls-' + c.id);
+    let controls = document.getElementById('controls-' + c.localId);
     if(controls) {
         console.warn('Attempted to add duplicate controls');
         return;
@@ -1365,7 +1406,7 @@ function addCustomControls(media, container, c) {
     let template =
         document.getElementById('videocontrols-template').firstElementChild;
     controls = cloneHTMLElement(template);
-    controls.id = 'controls-' + c.id;
+    controls.id = 'controls-' + c.localId;
 
     let volume = getVideoButton(controls, 'volume');
     if(c.kind === 'local') {
@@ -1482,16 +1523,16 @@ function registerControlHandlers(media, container) {
 }
 
 /**
- * @param {string} id
+ * @param {string} localId
  */
-function delMedia(id) {
+function delMedia(localId) {
     let mediadiv = document.getElementById('peers');
-    let peer = document.getElementById('peer-' + id);
+    let peer = document.getElementById('peer-' + localId);
     if(!peer)
         throw new Error('Removing unknown media');
 
     let media = /** @type{HTMLVideoElement} */
-        (document.getElementById('media-' + id));
+        (document.getElementById('media-' + localId));
 
     media.srcObject = null;
     mediadiv.removeChild(peer);
@@ -1508,7 +1549,7 @@ function setMediaStatus(c) {
     let state = c && c.pc && c.pc.iceConnectionState;
     let good = state === 'connected' || state === 'completed';
 
-    let media = document.getElementById('media-' + c.id);
+    let media = document.getElementById('media-' + c.localId);
     if(!media) {
         console.warn('Setting status of unknown media.');
         return;
@@ -1534,7 +1575,7 @@ function setMediaStatus(c) {
  * @param {string} [fallback]
  */
 function setLabel(c, fallback) {
-    let label = document.getElementById('label-' + c.id);
+    let label = document.getElementById('label-' + c.localId);
     if(!label)
         return;
     let l = c.username;
@@ -1711,6 +1752,7 @@ async function gotJoined(kind, group, perms, message) {
     case 'fail':
         displayError('The server said: ' + message);
         this.close();
+        setButtonsVisibility();
         return;
     case 'redirect':
         this.close();
@@ -1718,6 +1760,7 @@ async function gotJoined(kind, group, perms, message) {
         return;
     case 'leave':
         this.close();
+        setButtonsVisibility();
         return;
     case 'join':
     case 'change':
@@ -1737,7 +1780,10 @@ async function gotJoined(kind, group, perms, message) {
     input.placeholder = 'Type /help for help';
     setTimeout(() => {input.placeholder = '';}, 8000);
 
-    this.request(getSettings().request);
+    if(typeof RTCPeerConnection === 'undefined')
+        displayWarning("This browser doesn't support WebRTC");
+    else
+        this.request(getSettings().request);
 
     if(serverConnection.permissions.present && !findUpMedia('local')) {
         if(present) {
