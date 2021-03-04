@@ -17,6 +17,7 @@ import org.xmpp.packet.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.dom4j.*;
+import net.sf.json.*;
 
 
 public class XmppConnection extends VirtualConnection
@@ -83,28 +84,37 @@ public class XmppConnection extends VirtualConnection
 
     @Override
     public void deliver(Packet packet) throws UnauthorizedException
-    {
-        final String xml;
-        if (Namespace.NO_NAMESPACE.equals(packet.getElement().getNamespace())) {
-            // use string-based operation here to avoid cascading xmlns wonkery
-            StringBuilder packetXml = new StringBuilder(packet.toXML());
-            packetXml.insert(packetXml.indexOf(" "), " xmlns=\"jabber:client\"");
-            xml = packetXml.toString();
-        } else {
-            xml = packet.toXML();
-        }
-        if (validate()) {
-            deliverRawText(xml);
-        } else {
-            // use fallback delivery mechanism (offline)
-            getPacketDeliverer().deliver(packet);
-        }
+    {		
+		String room = packet.getFrom().getNode();
+		String participant = packet.getFrom().getResource();	
+		
+        if (packet instanceof Message) 
+		{		
+			Message message = (Message) packet;
+			
+			if (message.getType() == Message.Type.groupchat)
+			{
+				Log.info("Incoming chat " + room + ", participant " + participant + "\n" + message.getBody());
+				
+				if (!socket.participants.containsKey(participant))	// xmpp participant
+				{
+					JSONObject json = new JSONObject();
+					json.put("type", "chat");
+					json.put("username", participant);			
+					json.put("source", "");			
+					json.put("value", message.getBody());
+					json.put("time", System.currentTimeMillis());			
+					
+					socket.deliver(json.toString());
+				}				
+			}
+		}		
     }
 
     @Override
     public void deliverRawText(String text)
     {
-		Log.debug("xmpp->galene\n" + text);
+		Log.debug("deliverRawText\n" + text);	
     }
 
     @Override

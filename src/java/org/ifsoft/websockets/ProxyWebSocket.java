@@ -43,7 +43,6 @@ import org.ifsoft.oju.openfire.Oju;
 	private XmppConnection xmpp = null;
 	private String room_name = null;
 	private String domain = XMPPServer.getInstance().getServerInfo().getXMPPDomain();
-	private MessageRouter messageRouter = XMPPServer.getInstance().getMessageRouter();
 	
 	public String username = "";	
 	public HashMap<String, String> participants = new HashMap<String, String>();
@@ -63,7 +62,6 @@ import org.ifsoft.oju.openfire.Oju;
         this.wsSession = wsSession;
 		room_name = null;
 		username = "";
-        //proxyConnection.setSecure(wsSession.isSecure());
         Log.debug("onConnect");
     }
 
@@ -86,24 +84,6 @@ import org.ifsoft.oju.openfire.Oju;
 
     @OnWebSocketMessage public void onTextMethod(String data)
     {
-		// join
-		// {"type":"join","kind":"join","group":"lobby","username":"","password":""}
-		
-		// participant added/deleted
-		// {"type":"user","kind":"add","id":"3e86d28b16c6e51160ac7ab4108ef51d","username":"femi"}
-		// {"type":"user","kind":"delete","id":"3e86d28b16c6e51160ac7ab4108ef51d","username":"femi"}		
-		
-		// from anon to all
-		// {"type":"chat","source":"3408dd7c44ecf90dbfa5327189009a5c","dest":"","kind":"","value":"hello"}
-		
-		// from femi to all
-		// {"type":"chat","source":"0226ce2742c8fdfb5729ee0af67b7d55","dest":"","username":"femi","kind":"","value":"aaaaaaaaaaaaaaaaaaaa"}
-		
-		// from femi to sade
-		// {"type":"chat","source":"0226ce2742c8fdfb5729ee0af67b7d55","dest":"b92132f59e34c0692462443ba17acc40","username":"femi","kind":"","value":"hello"}
-		
-		// from sade to femi
-		// {"type":"chat","source":"b92132f59e34c0692462443ba17acc40","dest":"0226ce2742c8fdfb5729ee0af67b7d55","username":"sade","kind":"","value":"Excellent"}
         try {
             Log.debug(" : onMessage : Received : \n" + data );
             proxyConnection.deliver(data);
@@ -119,9 +99,12 @@ import org.ifsoft.oju.openfire.Oju;
 				if (!username.isEmpty())
 				{
 					Log.debug("storing socket for " + room_name + username);
-					Oju.self.websockets.put(room_name + username, this);
+
 					xmpp = new XmppConnection(this, username);	
-					xmpp.route("<presence from=\"" + xmpp.getJid() + "\" />");					
+					xmpp.route("<presence from=\"" + xmpp.getJid() + "\" />");
+					
+					String to = room_name + "@conference." + domain + "/" + username;
+					xmpp.route("<presence from=\"" + xmpp.getJid() + "\" to=\"" + to + "\" />");	
 				}
 			}
 			else
@@ -167,9 +150,9 @@ import org.ifsoft.oju.openfire.Oju;
 						if (room != null)
 						{
 							message.setType(Message.Type.groupchat);							
-							message.setFrom(room_name + "@" + service + "." + domain + "/" + username);
-							room.send(message, room.getRole());								
-							mucService.logConversation(room, message, xmpp.getJid());
+							message.setFrom(xmpp.getJid());							
+							message.setTo(room_name + "@" + service + "." + domain);							
+							xmpp.route(message.toXML());
 						}							
 					} else {
 						if (participants.containsKey(dest))
@@ -178,7 +161,7 @@ import org.ifsoft.oju.openfire.Oju;
 							message.setType(Message.Type.chat);								
 							message.setTo(peer + "@" + domain);
 							message.setFrom(username + "@" + domain);
-							messageRouter.route(message);
+							xmpp.route(message.toXML());
 						}
 					}		
 				}					
@@ -195,8 +178,7 @@ import org.ifsoft.oju.openfire.Oju;
     }
 
     public void deliver(String message)
-    {
-		// {"type":"chat","source":"0226ce2742c8fdfb5729ee0af67b7d55","username":"femi","value":"aaaaaaaaaaaaaaaaaaaa","time":1613648989119}		
+    {		
         try {
             Log.debug(" : Delivered : \n" + message );
             wsSession.getRemote().sendStringByFuture(message);
@@ -223,11 +205,6 @@ import org.ifsoft.oju.openfire.Oju;
 
             }
         }
-		
-		if (!username.isEmpty())
-		{
-			Oju.self.websockets.remove(room_name + username);		
-		}
 
 		if (xmpp != null) xmpp.close();		
     }
