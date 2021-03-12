@@ -85,21 +85,22 @@ import org.ifsoft.oju.openfire.Oju;
     @OnWebSocketMessage public void onTextMethod(String data)
     {
         try {
-            Log.debug(" : onMessage : Received : \n" + data );
             proxyConnection.deliver(data);
 			
 			JSONObject json = new JSONObject(data);	
 			String type = json.getString("type");
+			
+            Log.debug("onTextMethod " + type + "\n" + json );		
 
 			if ("join".equals(type))
 			{
 				room_name = json.getString("group");
 				username = json.getString("username");
 				
-				if (!username.isEmpty())
+				Log.debug("xmpp session for " + room_name + username);				
+				
+				if (! "".equals(username))
 				{
-					Log.debug("storing socket for " + room_name + username);
-
 					xmpp = new XmppConnection(this, username);	
 					xmpp.route("<presence from=\"" + xmpp.getJid() + "\" />");
 					
