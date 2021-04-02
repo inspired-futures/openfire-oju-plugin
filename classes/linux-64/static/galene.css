@@ -966,7 +966,9 @@ h1 {
 .sidenav-content {
     padding: 10px;
     background: #fff;
-    height: 100%;
+    height: calc(100% - 56px);
+    overflow-y: scroll;
+    overflow-x: hidden;
 }
 
 .sidenav-content h2 {
@@ -1120,12 +1122,10 @@ header .collapse {
     height: 20px;
 }
 
-/* Shrinking the sidebar from 200px to 60px and center aligining its content*/
+/* Shrinking the sidebar from 200px to 0px */
 #left-sidebar.active {
-    min-width: 60px;
-    max-width: 60px;
-    text-align: center;
-    margin-left: -60px !important;
+    min-width: 0;
+    max-width: 0;
 }
 
 #left-sidebar .sidebar-header strong {
@@ -1265,10 +1265,8 @@ header .collapse {
     }
 
     #left-sidebar {
-        min-width: 60px;
-        max-width: 60px;
-        text-align: center;
-        margin-left: -60px !important;
+        min-width: 0;
+        max-width: 0;
     }
 
     /* Reappearing the sidebar on toggle button click */
