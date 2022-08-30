@@ -1,4 +1,7 @@
-# Oju - Video Conferencing service for Openfire using Galene.
+## Oju - Video Conferencing service for Openfire using Galene.
+
+## Status
+This project is archived and replaced by the [Galene plugin for Openfire](https://github.com/igniterealtime/openfire-galene-plugin)
 
 ## Known Issues
 
